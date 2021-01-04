@@ -2,7 +2,7 @@
 
 犯罪人網路前端 + 後端
 
-## Deployment
+## Setup
 
 1. Git Clone
 
@@ -27,7 +27,7 @@ cd LegalTech-Hackathon/2019/django
 ...
 ```
 
-3. Start Service
+3. 啟動
 
 ```sh
 docker-compose up --build --detach
