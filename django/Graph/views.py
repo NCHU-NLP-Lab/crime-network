@@ -1,30 +1,23 @@
-import datetime
 import json
 import multiprocessing as mp
-import os
 
 import networkx as nx
 from bson.objectid import ObjectId
+from networkx.readwrite.json_graph import node_link_graph
+from pymongo import MongoClient
+
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import redirect
 from django.template.loader import get_template
 from django.views.decorators.csrf import csrf_exempt
-from networkx.readwrite.json_graph import node_link_graph
-from pymongo import MongoClient
 
-MONGO_CONNECTION_CONFIG = {
-    "host": os.environ.get("MONGO_HOST"),
-    "port": int(os.environ.get("MONGO_PORT")),
-    "username": os.environ.get("MONGO_USERNAME"),
-    "password": os.environ.get("MONGO_PASSWORD"),
-}
-
-MONGO_DB_NAMES = {
-    "database": os.environ.get("MONGO_DB"),
-    "node": os.environ.get("MONGO_NODE"),
-    "edge": os.environ.get("MONGO_EDGE"),
-    "verdict": os.environ.get("MONGO_VERDICT"),
-}
+from .utils import (
+    MONGO_CONNECTION_CONFIG,
+    MONGO_DB_NAMES,
+    get_edge,
+    get_node,
+    node_process,
+)
 
 
 def homepage(request):
@@ -40,7 +33,7 @@ def graph(request):
 
 @csrf_exempt
 def search_prisoner(request):
-    print(request.POST)
+    # print(f"{request.POST=}")
     prisoner = request.POST["prisoner"]
 
     client = MongoClient(**MONGO_CONNECTION_CONFIG)
@@ -58,32 +51,14 @@ def search_prisoner(request):
     return JsonResponse(result)
 
 
-def node_process(name):
-    client = MongoClient(**MONGO_CONNECTION_CONFIG)
-    this_Node = client[MONGO_DB_NAMES["database"]][MONGO_DB_NAMES["node"]].find(
-        {"name": name}
-    )[0]
-    this_Node = {
-        "name": name,
-        "v_id": this_Node["v_id"],
-        "reason": this_Node["reason"],
-        "sys": this_Node["sys"],
-        "court": this_Node["court"],
-        "type": this_Node["type"],
-        "no": this_Node["no"],
-        "date": this_Node["date"],
-    }
-    return this_Node
-
-
 @csrf_exempt
 def get_graph_data(request):
-    start = datetime.datetime.now()
-    print(request.POST)
+    # start = datetime.datetime.now()
+    # print("{request.POST=}")
     prisoner = request.POST["prisoner"]
-    level = request.POST["level"]
+    level = int(request.POST["level"])
+    sys = str(request.POST["sys"])
 
-    # global Node, Link, Edge
     Node = []  # Graph node
     Link = []  # Graph edge
     Target = [prisoner]  # 現在level要找的node
@@ -91,9 +66,9 @@ def get_graph_data(request):
     Edge = {}  # 所有node的edge
     Map = []
 
-    for _ in range(int(level)):
+    for _ in range(level):
         for t in Target:
-            get_node(t, Node, Edge)
+            get_node(t, Node, Edge, sys)
             haveFindNode.append(t)
         Target = []
         for n in Node:  # target為新增的node中 不曾找過的node
@@ -101,13 +76,13 @@ def get_graph_data(request):
                 Target.append(n)
 
     # Get all edge
-    get_Edge(Node, Edge, Link)
+    get_edge(Node, Edge, Link, sys)
 
     # Get node information
     pool = mp.Pool()
     Node_result = []
     for n in Node:
-        print(n)
+        # print("{n=}")
         p = pool.apply_async(node_process, args=(n,))
         Node_result.append(p)
     for r in Node_result:
@@ -116,85 +91,17 @@ def get_graph_data(request):
     pool.join()
 
     result = {"Map": Map, "Link": Link}
-
-    time = datetime.datetime.now() - start
-    print("Time:", time)
-
+    # time = datetime.datetime.now() - start
+    # print(f"{time=}")
     return JsonResponse(result)
-
-
-def get_node(prisoner, Node, Edge):  # 取得所有鄰居node
-    client = MongoClient(**MONGO_CONNECTION_CONFIG)
-    if prisoner not in Node:
-        Node.append(prisoner)
-    if prisoner not in Edge:
-        this_Edge = list(
-            client[MONGO_DB_NAMES["database"]][MONGO_DB_NAMES["edge"]].find(
-                {"from_Name": prisoner}
-            )
-        )
-        Edge[prisoner] = this_Edge
-    else:
-        this_Edge = Edge[prisoner]
-
-    for e in this_Edge:
-        if e["to_Name"] not in Node:
-            Node.append(e["to_Name"])
-
-
-def edge_process(ni, Node, Edge):
-    client = MongoClient(**MONGO_CONNECTION_CONFIG)
-    Link = []
-    if ni not in Edge:
-        this_Edge = list(
-            client[MONGO_DB_NAMES["database"]][MONGO_DB_NAMES["edge"]].find(
-                {"from_Name": ni}
-            )
-        )
-        Edge[ni] = this_Edge
-    else:
-        this_Edge = Edge[ni]
-    for e in this_Edge:
-        for nj_index, nj in enumerate(Node):
-            print("nj_index:", nj_index, "ni", ni)
-            if e["to_Name"] == nj:
-                Link.append(
-                    {
-                        "source": Node.index(e["from_Name"]),
-                        "target": Node.index(e["to_Name"]),
-                        "weight": e["weight"],
-                        "v_id": e["v_id"],
-                        "reason": e["reason"],
-                        "sys": e["sys"],
-                        "court": e["court"],
-                        "type": e["type"],
-                        "no": e["no"],
-                        "date": e["date"],
-                    }
-                )
-    return Link
-
-
-def get_Edge(Node, Edge, Link):  # 取得所有node的edge
-    print("cpus: ", mp.cpu_count())
-    pool = mp.Pool()
-    result = []
-    for ni_index, ni in enumerate(Node):
-        print("ni_index", ni_index)
-        p = pool.apply_async(edge_process, args=(ni, Node, Edge))
-        result.append(p)
-    for r in result:
-        Link += r.get()
-    pool.close()
-    pool.join()
 
 
 @csrf_exempt
 def get_shortest_path(request):
     source = request.POST["source"]
     target = request.POST["target"]
-    print(os.getcwd())
-    print(source, target)
+    # print(f"{os.getcwd()=}")
+    # print(f"{source=}, {target=}")
     client = MongoClient(**MONGO_CONNECTION_CONFIG)
     with open("static/graph/Law_edge_gragh.json", "r", encoding="UTF-8") as F:
         G = node_link_graph(json.load(F))
@@ -204,7 +111,7 @@ def get_shortest_path(request):
     Map = []
     try:
         path = nx.shortest_path(G, source=source, target=target)
-        print("path:", path)
+        # print(f"{path=}")
         for ni, n in enumerate(path):
             Node.append(n)
             if ni != len(path) - 1:
@@ -227,7 +134,7 @@ def get_shortest_path(request):
                         "date": this_Edge["date"],
                     }
                 )
-    except:
+    except Exception:
         path = []
         Node = [source, target]
 
@@ -246,7 +153,7 @@ def get_shortest_path(request):
                 "no": this_Node["no"],
                 "date": this_Node["date"],
             }
-        except:
+        except Exception:
             this_Node = {"name": n}
         Map.append(this_Node)
     result = {"Map": Map, "Link": Link}
@@ -257,7 +164,7 @@ def get_shortest_path(request):
 def get_verdict(request):
     verdict_id = request.POST["verdict"]
 
-    print(verdict_id)
+    # print("{verdict_id=}")
 
     client = MongoClient(**MONGO_CONNECTION_CONFIG)
     Verdict = list(
