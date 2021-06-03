@@ -14,8 +14,8 @@ services:
       - MONGO_EDGE=Civil_Edge_2019
       - MONGO_VERDICT=Civil_Verdict_2019
     networks:
-      - "web_server_web-server-bridge"
+      - "service-bridge"
     restart: always
 networks:
-  web_server_web-server-bridge:
+  service-bridge:
     external: true
