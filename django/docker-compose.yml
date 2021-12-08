@@ -1,0 +1,21 @@
+version: "3.5"
+
+services:
+  crime-network:
+    build: "."
+    container_name: "crime-network"
+    environment:
+      - MONGO_HOST=
+      - MONGO_PORT=
+      - MONGO_USERNAME=
+      - MONGO_PASSWORD=
+      - MONGO_DB=Law
+      - MONGO_NODE=Civil_Node_2019
+      - MONGO_EDGE=Civil_Edge_2019
+      - MONGO_VERDICT=Civil_Verdict_2019
+    networks:
+      - "service-bridge"
+    restart: always
+networks:
+  service-bridge:
+    external: true
