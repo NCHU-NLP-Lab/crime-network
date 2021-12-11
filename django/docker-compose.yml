@@ -1,3 +1,4 @@
+# docker-compose up --build --detach
 version: "3.5"
 
 services:
@@ -13,9 +14,6 @@ services:
       - MONGO_NODE=Civil_Node_2019
       - MONGO_EDGE=Civil_Edge_2019
       - MONGO_VERDICT=Civil_Verdict_2019
-    networks:
-      - "service-bridge"
+    ports:
+      - "8613:8000"
     restart: always
-networks:
-  service-bridge:
-    external: true
